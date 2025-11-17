@@ -29,9 +29,19 @@ class SoftBodyRender(ObjRender):
         self.color = color_rgba
         self.thickness = 4
     
-    def draw(self, surface: pg.Surface) -> None:
+    def draw(self, surface: pg.Surface, as_skeleton: bool = False) -> None:
         pts = [self.to_screen(p.pos) for p in self.body.points]
         n = len(pts)
-        pg.draw.polygon(surface=surface, color=self.color, points=pts)
-        for i in range(n):
-            pg.draw.line(surface, self.color[:3], pts[i], pts[(i+1)%n], self.thickness)
+        if not as_skeleton:
+            pg.draw.polygon(surface=surface, color=self.color, points=pts)
+            for i in range(n):
+                pg.draw.line(surface, self.color[:3], pts[i], pts[(i+1)%n], self.thickness)
+        else:
+            for c in self.body.C:
+                if isinstance(c, DistConstraint):
+                    p0 = self.to_screen(c.points[0].pos)
+                    p1 = self.to_screen(c.points[1].pos)
+                    pg.draw.line(surface, self.color[:3], p0, p1, 2)
+
+            for p in pts:
+                pg.draw.circle(surface, self.color[:3], p, 5)

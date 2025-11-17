@@ -68,13 +68,44 @@ class AreaConstraint(Constraint):
         p_next = self.points[(i+1)%n]
         return 0.5 * np.array([p_prev.pos[1] - p_next.pos[1], p_next.pos[0] - p_prev.pos[0]])
 
+class LineCollider():
+    def __init__(self, point: ndarray, normal: ndarray, restitution: float = 1.0) -> None:
+        n = np.linalg.norm(normal)
+        self.normal = normal / n if n > 1e-12 else np.array([0.0, 1.0])
+        self.point = point
+        self.restitution = restitution
+    
+    def collide(self, points: list[Point]) -> None:
+        n = self.normal
+        for p in points:
+            if hasattr(p, "_bounce_vn"):
+                v = p.v
+                v_n = np.dot(v, n)
+                if v_n > p._bounce_vn:
+                    v_t = v - v_n * n
+                    p.v = v_t + p._bounce_vn * n
+                del p._bounce_vn
+
+            d = np.dot(p.pos - self.point, n)
+            if d < 0.0:
+                eps = 1e-4
+                p.pos -= (d - eps) * n
+
+                v_n = np.dot(p.v, n)
+                v_t = p.v - v_n * n
+                v_n_new = -self.restitution * v_n
+                p.v = v_t + v_n_new * n
+
+                p._bounce_vn = v_n_new
+
 class XPBD():
-    def __init__(self, points: list[Point], constraints: list[Constraint], n_sub: int, damp: float = 0.0) -> None:
+    def __init__(self, points: list[Point], constraints: list[Constraint], collider: list[LineCollider] | None = None, n_sub: int = 5, damp: float = 0.0) -> None:
         self.points = points
         self.C = constraints
         self.n_sub = n_sub
         self.damp = damp
         self.centroid = sum(p.pos for p in points) / len(points)
+        self.collider = collider
 
     def step(self, dt: float) -> None:
         d_sub = dt / self.n_sub
@@ -84,6 +115,9 @@ class XPBD():
                 p.v += d_sub * p.a
                 p.pos_prev = p.pos.copy()
                 p.pos += d_sub * p.v
+            if self.collider is not None:
+                for C in self.collider:
+                    C.collide(self.points)
             for c in self.C:
                 c.solve(d_sub)
             for p in self.points:
@@ -99,14 +133,14 @@ class XPBD():
         return f"XPBD Body centered at ({self.centroid[0]:.3f}, {self.centroid[1]:.3f})"
 
 class SoftBody(XPBD):
-    def __init__(self, points: list[Point], n_sub: int, edge_alpha: float, area_alpha: float, diag_alpha: float = 0.0, damp: float = 0.0) -> None:
+    def __init__(self, points: list[Point], collider: list[LineCollider], n_sub: int, edge_alpha: float, area_alpha: float, diag_alpha: float = 0.0, damp: float = 0.0) -> None:
         constraints = []
         n = len(points)
 
         for i in range(n):
             constraints.append(DistConstraint([points[i], points[(i+1)%n]], edge_alpha))
-
-        constraints.append(AreaConstraint(points, area_alpha))
+        if n > 2:
+            constraints.append(AreaConstraint(points, area_alpha))
 
         if n > 3 and diag_alpha > 0.0:
             half_n = n // 2
@@ -114,20 +148,6 @@ class SoftBody(XPBD):
                 j = (i + half_n) % n
                 constraints.append(DistConstraint([points[i], points[j]], diag_alpha))
 
-        super().__init__(points, constraints, n_sub, damp)
+        super().__init__(points, constraints, collider, n_sub, damp)
 
 
-class LineCollider():
-    def __init__(self, point: ndarray, normal: ndarray, restitution: float = 1.0) -> None:
-        n = np.linalg.norm(normal)
-        self.normal = normal / n if n > 1e-12 else np.array([0.0, 1.0])
-        self.point = point
-        self.restitution = restitution
-    
-    def collide(self, points: list[Point]) -> None:
-        for p in points:
-            d = np.dot(p.pos - self.point, self.normal)
-            if d < 0.0:
-                p.pos -= d * self.normal
-                v_n = np.dot(p.v, self.normal)
-                p.v -= (1.0 + self.restitution) * v_n * self.normal
