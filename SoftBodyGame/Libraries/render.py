@@ -11,7 +11,7 @@ class ObjRender():
         ...
     
     def to_screen(self, pos: ndarray) -> tuple[int]:
-        x = int(pos[0] * self.scale + self.w // 2)
+        x = int(pos[0] * self.scale)
         y = int(self.h - pos[1] * self.scale)
         return (int(x), int(y))
 
@@ -44,10 +44,6 @@ class SoftBodyRender(ObjRender):
 
         for i in range(n):
             pg.draw.line(surface, self.color[:3], pts[i], pts[(i + 1) % n], self.thickness)
-
-        c = np.mean([p.pos for p in self.body.points], axis=0)
-        c_screen = self.to_screen(c)
-        pg.draw.circle(surface, (255, 255, 255), c_screen, 4)
 
 class SlideSurfaceRender(ObjRender):
     def __init__(self, slide_surface: SlideSurface, screen_w: int, screen_h: int, scale: float = 100.0, color_rgba: tuple[int] = (100, 200, 100, 80), thickness: int = 3) -> None:

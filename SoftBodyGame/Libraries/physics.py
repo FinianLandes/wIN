@@ -7,15 +7,23 @@ class Collider():
 
     def collide(self, points: list[Point]) -> None:
         for p in points:
-            closest_point, t = self.surface.closest_point(p.pos)
-            normal = self.surface.normal_at(closest_point, t)
+            closest, t = self.surface.closest_point(p.pos)
+            offset = p.pos - closest
+            if hasattr(self.surface, "bezier"):
+                d = self.surface.tangential_dist(t, p.pos)
+                if d > 0:
+                    continue
 
-            d = np.dot(p.pos - closest_point, normal)
-            if d < 0:
-                p.pos -= d * normal
-                vn = np.dot(p.v, normal)
-                if vn < 0:
-                    p.v -= (1 + self.restitution) * vn * normal
+            normal = self.surface.normal_at(t)
+            penetration = np.dot(offset, normal)
+
+            if penetration >= -0.004:
+                continue
+
+            p.pos -= (penetration + 0.004) * normal
+            vn = np.dot(p.v, normal)
+            if vn < 0:
+                p.v -= (1 + self.restitution) * vn * normal
 
 class SoftBody():
     def __init__(self, points: list[Point], damp: float = 0.0) -> None:

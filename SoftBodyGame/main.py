@@ -20,9 +20,9 @@ if __name__ == "__main__":
     #ctx = mgl.create_context() # Not yet used
     clk = pg.time.Clock()
 
-    n_points = 40
+    n_points = 50
     radius = 1.0
-    center = np.array([0.0, 9.0])
+    center = np.array([12, 11.0])
     body_points = []
 
     for i in range(n_points):
@@ -30,20 +30,21 @@ if __name__ == "__main__":
         pos = center + radius * np.array([np.cos(angle), np.sin(angle)])
         body_points.append(Point(pos=pos, m=1.0))
 
-    line_points = np.array([[5, 10], [3, 4]])
+    line_points = np.array([[8, 10], [13, 4]], dtype=float)
 
-    bezier_points = np.array([[5, 5], [2, 3], [3, 4]])
+    bezier_points = np.array([[15, 10], [16, 3], [8, 2.99]], dtype=float)
+
     
-    surfaces = [LineSlideSurface(np.array([[-TRUE_WIDTH, 0], [TRUE_WIDTH, 0]])), LineSlideSurface(line_points)]
+    surfaces = [LineSlideSurface(np.array([[0,0], [TRUE_WIDTH, 0]])), BezierSlideSurface(bezier_points, cw=True)]
     colliders = [Collider(s, restitution=0.95) for s in surfaces]
-    soft_bodies = [ShapedSoftBody(points=body_points, colliders=colliders, damp=0.01, rot_damp=0.08, stiffness=0.5)]
+    soft_bodies = [ShapedSoftBody(points=body_points, colliders=colliders, damp=0.01, rot_damp=0.08, stiffness=0.6)]
     renders = [SoftBodyRender(body, WIDTH, HEIGHT, scale=SCALE) for body in soft_bodies] + [SlideSurfaceRender(s, WIDTH, HEIGHT, scale=SCALE) for s in surfaces]
 
 
     skeleton_view: bool = False
     running = True
     while running:
-        dt = clk.tick(FPS) / 4000.0
+        dt = clk.tick(FPS) / 1000.0
         for b in soft_bodies:
             b.step(dt)
 
