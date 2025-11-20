@@ -1,41 +1,46 @@
 from .core import *
 
 class Collider():
-    def __init__(self, surface: SlideSurface, restitution: float = 0.5) -> None:
+    def __init__(self, surface: SlideSurface, restitution: float = 0.5, min_penetration: float = 4e-10) -> None:
         self.surface = surface
         self.restitution = restitution
+        self.min_penetration = min_penetration
 
     def collide(self, points: list[Point]) -> None:
         for p in points:
             closest, t = self.surface.closest_point(p.pos)
             offset = p.pos - closest
-            if hasattr(self.surface, "bezier"):
-                d = self.surface.tangential_dist(t, p.pos)
-                if d > 0:
-                    continue
-
             normal = self.surface.normal_at(t)
             penetration = np.dot(offset, normal)
 
-            if penetration >= -0.004:
-                continue
+            if hasattr(self.surface, "bezier"):
+                d = self.surface.tangential_dist(t, p.pos)
+                if d > 0: continue
 
-            p.pos -= (penetration + 0.004) * normal
+            if penetration >= -self.min_penetration: continue
+            else: p.is_grounded = True
+
+            p.pos -= (penetration + self.min_penetration) * normal
             vn = np.dot(p.v, normal)
             if vn < 0:
                 p.v -= (1 + self.restitution) * vn * normal
 
 class SoftBody():
-    def __init__(self, points: list[Point], damp: float = 0.0) -> None:
+    def __init__(self, points: list[Point], damp: float = 0.0, coyote_time: float = 0.1) -> None:
         self.points = points
         self.damp = damp
+        self.impulse = np.zeros(2)
+        self._now = 0.0
+        self._last_ground_time = -1.0
+        self.coyote_time = coyote_time
     
     def _apply_forces(self, dt: float) -> None:
         g = np.array([0.0, -9.81])
         for p in self.points:
             if p.w == 0:
                 continue
-            p.v += dt * g
+            p.v += dt * g + self.impulse
+        self.impulse = np.zeros(2)
 
     def _integrate(self, dt: float) -> None:
         for p in self.points:
@@ -45,6 +50,17 @@ class SoftBody():
     def step(self, dt: float) -> None:
         self._apply_forces(dt)
         self._integrate(dt)
+    
+    def add_impulse(self, impulse: ndarray) -> None:
+        self.impulse = impulse
+    
+    def can_jump(self) -> bool:
+        any_ground = any(p.is_grounded for p in self.points)
+        if any_ground:
+            self._last_ground_time = self._now
+            return True
+        return (self._now - self._last_ground_time) <= self.coyote_time
+
 
 class ShapedSoftBody(SoftBody):
     def __init__(self, points: list[Point], colliders: list[Collider], damp: float = 0, rot_damp: float = 0.05, stiffness: float = 0.7) -> None:
@@ -65,6 +81,7 @@ class ShapedSoftBody(SoftBody):
         self.colliders = colliders
     
     def step(self, dt: float) -> None:
+        self._init_step(dt)
         self._apply_forces(dt)
         for p in self.points:
                 p.pos += p.v * dt
@@ -90,7 +107,7 @@ class ShapedSoftBody(SoftBody):
             goal = c + R_total @ (self.r[i] - self.r_centroid)
             correction = self.s * (goal - x_pred[i])
             p.pos += correction
-            p.v   += correction * inv_dt
+            p.v += correction * inv_dt
 
     def _calculate_shape_rot(self, x_pred: ndarray, c: ndarray, w: ndarray) -> ndarray:
         A = np.zeros((2, 2))
@@ -116,12 +133,15 @@ class ShapedSoftBody(SoftBody):
     def _damp_v(self) -> None:
         for p in self.points:
             p.v *= (1.0 - self.damp)
+    
+    def _init_step(self, dt: float) -> None:
+        self._now += dt
+        for p in self.points:
+            p.is_grounded = False
 
     def __str__(self):
         c = np.sum([p.pos * p.m for p in self.points], axis=0) / self.mass_sum
         v_mean = np.mean([np.linalg.norm(p.v) for p in self.points])
-        return (f"Centroid: ({c[0]:.3f}, {c[1]:.3f}), "
-                f"Angular vel: {self.omega:.3f}, "
-                f"Mean speed: {v_mean:.3f}")
+        return (f"Centroid: ({c[0]:.3f}, {c[1]:.3f}), Angular vel: {self.omega:.3f}, Mean speed: {v_mean:.3f}")
 
 

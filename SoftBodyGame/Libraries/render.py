@@ -61,3 +61,16 @@ class SlideSurfaceRender(ObjRender):
         else:
             p1, p2 = self.to_screen(self.slide_surface.points[0]), self.to_screen(self.slide_surface.points[1])
             pg.draw.line(surface, self.color[:3], p1, p2, self.thickness)
+
+class TextRender(ObjRender):
+    def __init__(self, text: str, screen_w: int, screen_h: int, scale: int, font: pg.font.Font, color_rgba: tuple[int] = (0, 200, 100, 80), pos: ndarray = np.array([0.0, 0.0])) -> None:
+        super().__init__(screen_w, screen_h, scale)
+        self.font = font
+        self.pos = pos
+        self.text = text
+        self.color = color_rgba
+    def draw(self,surface: pg.Surface, text: str | None = None) -> None:
+        if text:
+            self.text = text
+        rendered_text = self.font.render(self.text, True, self.color[:3])
+        surface.blit(rendered_text, self.to_screen(self.pos))
