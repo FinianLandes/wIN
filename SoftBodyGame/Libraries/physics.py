@@ -1,7 +1,7 @@
 from .core import *
 
 class Collider():
-    def __init__(self, surface: SlideSurface, restitution: float = 0.5, min_penetration: float = 4e-10) -> None:
+    def __init__(self, surface: SlideSurface, restitution: float = 0.5, min_penetration: float = 4e-3) -> None:
         self.surface = surface
         self.restitution = restitution
         self.min_penetration = min_penetration
@@ -10,6 +10,7 @@ class Collider():
         for p in points:
             closest, t = self.surface.closest_point(p.pos)
             offset = p.pos - closest
+            # if np.linalg.norm(offset) > 5.0: continue
             normal = self.surface.normal_at(t)
             penetration = np.dot(offset, normal)
 
@@ -33,6 +34,9 @@ class SoftBody():
         self._now = 0.0
         self._last_ground_time = -1.0
         self.coyote_time = coyote_time
+        w = np.array([p.m for p in self.points])
+        self.mass_sum = np.sum(w)
+        self.centroid = np.zeros(2)
     
     def _apply_forces(self, dt: float) -> None:
         g = np.array([0.0, -9.81])
@@ -50,6 +54,7 @@ class SoftBody():
     def step(self, dt: float) -> None:
         self._apply_forces(dt)
         self._integrate(dt)
+        self.centroid = np.sum([p.pos * p.m for p in self.points], axis=0) / self.mass_sum
     
     def add_impulse(self, impulse: ndarray) -> None:
         self.impulse = impulse
@@ -88,7 +93,7 @@ class ShapedSoftBody(SoftBody):
 
         for collider in self.colliders:
             collider.collide(self.points)
-
+        
         x_pred = np.array([p.pos for p in self.points])
         w = np.array([p.m for p in self.points])
         c = np.sum(x_pred * w[:, None], axis=0) / self.mass_sum
@@ -140,8 +145,7 @@ class ShapedSoftBody(SoftBody):
             p.is_grounded = False
 
     def __str__(self):
-        c = np.sum([p.pos * p.m for p in self.points], axis=0) / self.mass_sum
         v_mean = np.mean([np.linalg.norm(p.v) for p in self.points])
-        return (f"Centroid: ({c[0]:.3f}, {c[1]:.3f}), Angular vel: {self.omega:.3f}, Mean speed: {v_mean:.3f}")
+        return (f"Centroid: ({self.centroid[0]:.3f}, {self.centroid[1]:.3f}), Angular vel: {self.omega:.3f}, Mean speed: {v_mean:.3f}")
 
 

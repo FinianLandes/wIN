@@ -6,14 +6,23 @@ class ObjRender():
         self.w = screen_w
         self.h = screen_h
         self.scale = scale
+        self.cam_x = 0.0
+        self.cam_y = 0.0
     
     def draw(self, surface: pg.Surface) -> None:
         ...
     
+    def update_camera(self, player_pos: ndarray):
+        self.cam_x = player_pos[0]
+        self.cam_y = player_pos[1]
+
     def to_screen(self, pos: ndarray) -> tuple[int]:
-        x = int(pos[0] * self.scale)
-        y = int(self.h - pos[1] * self.scale)
-        return (int(x), int(y))
+        dx = (pos[0] - self.cam_x) * self.scale
+        dy = (pos[1] - self.cam_y) * self.scale
+
+        x = dx + self.w * 0.5
+        y = self.h * 0.5 - dy
+        return int(x), int(y)
 
     def in_bounds(self, screen_pos: tuple[int, int]) -> bool:
         x, y = screen_pos
@@ -58,9 +67,23 @@ class SlideSurfaceRender(ObjRender):
             points = [self.to_screen(self.slide_surface.bezier(t)) for t in t_space]
             for i in range(len(points) - 1):
                 pg.draw.line(surface, self.color[:3], points[i], points[i + 1], self.thickness)
+            if as_skeleton:
+                pm = self.slide_surface.bezier(0.5)
+                norm = self.slide_surface.normal_at(0.5)
+                pe = self.to_screen(pm + norm)
+                pm = self.to_screen(pm)
+                pg.draw.line(surface, self.color[:3], pm, pe, self.thickness)
         else:
             p1, p2 = self.to_screen(self.slide_surface.points[0]), self.to_screen(self.slide_surface.points[1])
             pg.draw.line(surface, self.color[:3], p1, p2, self.thickness)
+            if as_skeleton:
+                pm = (self.slide_surface.points[0] + self.slide_surface.points[1]) / 2
+                norm = self.slide_surface.normal_at(0.5)
+                pe = self.to_screen(pm + norm)
+                pm = self.to_screen(pm)
+                pg.draw.line(surface, self.color[:3], pm, pe, self.thickness)
+
+
 
 class TextRender(ObjRender):
     def __init__(self, text: str, screen_w: int, screen_h: int, scale: int, font: pg.font.Font, color_rgba: tuple[int] = (0, 200, 100, 80), pos: ndarray = np.array([0.0, 0.0])) -> None:
