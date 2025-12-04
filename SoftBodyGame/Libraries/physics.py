@@ -7,16 +7,16 @@ class Collider():
         self.min_penetration = min_penetration
 
     def collide(self, points: list[Point]) -> None:
+        if any(p.pos[0] < self.surface.points[-1][0] and p.pos[0] > self.surface.points[0][0] for p in points): ...
+        else: return
         for p in points:
             closest, t = self.surface.closest_point(p.pos)
             offset = p.pos - closest
-            # if np.linalg.norm(offset) > 5.0: continue
             normal = self.surface.normal_at(t)
             penetration = np.dot(offset, normal)
 
-            if hasattr(self.surface, "bezier"):
-                d = self.surface.tangential_dist(t, p.pos)
-                if d > 0: continue
+            d = self.surface.tangential_dist(t, p.pos)
+            if d > 0: continue
 
             if penetration >= -self.min_penetration: continue
             else: p.is_grounded = True
@@ -105,6 +105,7 @@ class ShapedSoftBody(SoftBody):
         self._update_positions(dt, x_pred, c, R_total)
 
         self._damp_v()
+        self.centroid = np.sum([p.pos * p.m for p in self.points], axis=0) / self.mass_sum
 
     def _update_positions(self, dt: float, x_pred: ndarray, c: ndarray, R_total: ndarray) -> None:
         inv_dt = 1.0 / dt

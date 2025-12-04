@@ -5,6 +5,8 @@ class LineSlideSurface(SlideSurface):
         self.points = points if len(points) < 3 else points[0:2]
         tangent = (self.points[1] - self.points[0]) / float(np.linalg.norm(self.points[1] - self.points[0]))
         self.norm = np.array([-tangent[1], tangent[0]])
+        self.prev_normal: ndarray | None = None 
+        self.blend = 0.08
 
     def closest_point(self, point: ndarray) -> list[ndarray, float]:
         A, B = self.points
@@ -15,15 +17,33 @@ class LineSlideSurface(SlideSurface):
         return A + t * AB, t
     
     def normal_at(self, t: float) -> ndarray:
-        if self.norm[1] < 0:
-            return -self.norm
-        return self.norm
+        base_normal = -self.norm if self.norm[1] < 0 else self.norm
+        if self.prev_normal is not None and t < self.blend:
+            t_ratio = t / self.blend
+            blended = (1 - t_ratio) * self.prev_normal + t_ratio * base_normal
+            norm = np.linalg.norm(blended)
+            if norm > 1e-8:
+                return blended / norm
+            return base_normal
+        return base_normal
+    
+    def tangential_dist(self, t: float, point: ndarray) -> float:
+        A = self.points[0]
+        tangent = self.points[1] - A
+        vec = point - A
+        cross = tangent[0] * vec[1] - tangent[1] * vec[0]
+        length = np.linalg.norm(tangent)
+        if length < 1e-8:
+            return 0.0
+        return cross / length
 
 class BezierSlideSurface(SlideSurface):
     def __init__(self, points: ndarray, cw: bool = False) -> None:
         self.points = points 
         self.n = len(self.points) - 1
         self.cw = cw
+        self.prev_normal: ndarray | None = None 
+        self.blend = 0.08
 
     def _newton(self, init_t: float, point: ndarray, n_steps: int = 5) -> float:
         t = init_t
@@ -84,8 +104,18 @@ class BezierSlideSurface(SlideSurface):
                 tangent = self.points[-1] - self.points[-2]
             mag = np.linalg.norm(tangent)
         tangent /= max(mag, 1e-8)
-        normal = np.array([-tangent[1], tangent[0]])
-        return -normal if self.cw else normal
+        base_normal = np.array([-tangent[1], tangent[0]])
+        if self.cw:
+            base_normal = -base_normal
+
+        if self.prev_normal is not None and t < self.blend:
+            t_ratio = t / self.blend
+            blended = (1 - t_ratio) * self.prev_normal + t_ratio * base_normal
+            norm = np.linalg.norm(blended)
+            if norm > 1e-8:
+                return blended / norm
+
+        return -base_normal if self.cw else base_normal
 
     def tangential_dist(self, t: float, point: ndarray) -> float:
         if t < 1e-4:
@@ -113,12 +143,14 @@ class TrackGenerator():
         self.max_gap = max_gap
         self.no_gap_count = 0
         self.end_pos = self.segments[0].points[1]
+        self.wiggle = 0.8
+        self.handle_min = 0.22
+        self.handle_max = 0.32
         
     
     def update(self, player_pos: ndarray) -> None:
         if self.end_pos[0] - player_pos[0] < self.pre_render_range:
-            #self._generate_segment()
-            ...
+            self._generate_segment()
                 
         while player_pos[0] - self.segments[0].points[-1][0] > self.pre_render_range:
             self.segments.pop(0)
@@ -151,21 +183,53 @@ class TrackGenerator():
 
     def _add_line(self) -> None:
         p1, p2 = self.end_pos, self._calculate_end_point()
-        seg = LineSlideSurface(np.array([p2, p1]))
+        seg = LineSlideSurface(np.array([p1, p2]))
+        if self.segments:
+            prev_seg = self.segments[-1]
+            seg.prev_normal = prev_seg.normal_at(1.0)
         self.segments.append(seg)
         self.end_pos = p2
     
     def _add_bezier(self) -> None:
-        p1, p2 = self.end_pos, self._calculate_end_point()
+        p1 = self.end_pos
+        p2 = self._calculate_end_point()
         L = p2[0] - p1[0]
-        max_height = math.tan(math.radians(self.max_slope)) * L
-        random_offset1, random_offset2 = random.uniform(-max_height, max_height), random.uniform(-max_height, max_height)
-        slope1, slope2 = random.uniform(-0.3, -0.002), random.uniform(-0.3, -0.002)
-        c1 = p1[0] + L * 0.25, p1[1] + slope1 * L * 0.25 + random_offset1
-        c2 = p1[0] + L * 0.75, p2[1] + slope2 * L * 0.75 + random_offset2
+
+        if self.segments:
+            prev_normal = self.segments[-1].normal_at(1.0)
+            prev_tangent = np.array([prev_normal[1], -prev_normal[0]])
+            tangent_len = np.linalg.norm(prev_tangent)
+            if tangent_len > 0:
+                prev_tangent /= tangent_len
+        else:
+            prev_tangent = np.array([1.0, 0.0])
+
+        handle1_fraction = random.uniform(self.handle_min, self.handle_max)
+        handle1_len = L * handle1_fraction
+
+        c1 = p1 + prev_tangent * handle1_len
+
+        perp = np.array([-prev_tangent[1], prev_tangent[0]])
+        wiggle = random.uniform(-self.wiggle, self.wiggle) * math.tan(math.radians(self.max_slope)) * L * 0.12
+        c1 += perp * wiggle
+
+        handle2_fraction = random.uniform(self.handle_min, self.handle_max)
+        handle2_len = L * handle2_fraction
+
+        max_pull = math.tan(math.radians(self.max_slope)) * L * 0.25
+        pull_up = random.uniform(0.0, max_pull)
+        kick_down = random.uniform(0.0, max_pull * 0.4)
+
+        c2_y = p2[1] + pull_up + kick_down
+        c2 = np.array([p2[0] - handle2_len, c2_y])
+
         seg = BezierSlideSurface(np.array([p1, c1, c2, p2]))
+
+        if self.segments:
+            seg.prev_normal = self.segments[-1].normal_at(1.0)
+
         self.segments.append(seg)
-        self.end_pos = p2
+        self.end_pos = p2.copy()
 
     def _add_gap(self) -> None:
         self.end_pos[0] += self.max_gap

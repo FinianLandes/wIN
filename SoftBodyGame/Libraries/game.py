@@ -15,11 +15,11 @@ class Game:
         self.surfaces: list[SlideSurface] = []
         self.colliders: list[Collider] = [Collider(s, restitution=0.95) for s in self.surfaces]
 
-        self.player_points = [Point([-0.5, 12.0]), Point([0.5, 12.0]), Point([0.5, 13.0]), Point([-0.5, 13.0])]
+        self.player_points = [Point([-0.2, 12.0]), Point([0.2, 12.0]), Point([0.2, 12.4]), Point([-0.2, 12.4])]
         self.player = ShapedSoftBody(self.player_points,self.colliders, damp=0.05)
         self.soft_bodies: list[ShapedSoftBody] = [self.player]
         self.renders: list[ObjRender] = []
-        self.skeleton_view = False
+        self.skeleton_view = True
         self.jump_impulse = np.array([0.0, 10.0])
         self.surface_restitution = 0.95
         self.screen, self.clk = self._setup()
@@ -64,9 +64,14 @@ class Game:
                 self._handle_keydown(event.key)
     
     def _handle_keydown(self, key: int) -> None:
-        for b in self.soft_bodies:
-            if b.can_jump():
-                b.add_impulse(self.jump_impulse)
+        if key == pg.K_SPACE:
+            for b in self.soft_bodies:
+                if b.can_jump():
+                    b.add_impulse(self.jump_impulse)
+        if key == pg.K_RIGHT:
+            for b in self.soft_bodies:
+                b.add_impulse(np.array([10, 0]))
+
     
     def _quit(self) -> None:
         pg.quit()
