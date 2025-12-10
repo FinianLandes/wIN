@@ -2,19 +2,21 @@ from .physics import *
 from .objects import *
 
 class ObjRender():
-    def __init__(self, screen_w: int, screen_h: int, scale: int) -> None:
+    def __init__(self, screen_w: int, screen_h: int, scale: int, static: bool = False) -> None:
         self.w = screen_w
         self.h = screen_h
         self.scale = scale
         self.cam_x = 0.0
         self.cam_y = 0.0
+        self.static = static
     
     def draw(self, surface: pg.Surface) -> None:
         ...
     
-    def update_camera(self, player_pos: ndarray):
-        self.cam_x = player_pos[0]
-        self.cam_y = player_pos[1]
+    def update_camera(self, player_pos: ndarray) -> None:
+        if not self.static:
+            self.cam_x = player_pos[0]
+            self.cam_y = player_pos[1]
 
     def to_screen(self, pos: ndarray) -> tuple[int]:
         dx = (pos[0] - self.cam_x) * self.scale
@@ -29,11 +31,12 @@ class ObjRender():
         return 0 <= x < self.w and 0 <= y < self.h
 
 class SoftBodyRender(ObjRender):
-    def __init__(self, body: SoftBody, screen_w: int, screen_h: int, scale: float = 100.0, color_rgba: tuple[int] = (255, 200, 100, 80), thickness: int = 3) -> None:
+    def __init__(self, body: SoftBody, screen_w: int, screen_h: int, scale: float = 100.0, color_rgba: tuple[int] = (255, 200, 100, 80), thickness: int = 3, static: bool = False) -> None:
         super().__init__(screen_w, screen_h, scale)
         self.body = body
         self.color = color_rgba
         self.thickness = thickness
+        self.static = static
 
     def draw(self, surface: pg.Surface, as_skeleton: bool = False) -> None:
         pts = [self.to_screen(p.pos) for p in self.body.points]
@@ -55,11 +58,12 @@ class SoftBodyRender(ObjRender):
             pg.draw.line(surface, self.color[:3], pts[i], pts[(i + 1) % n], self.thickness)
 
 class SlideSurfaceRender(ObjRender):
-    def __init__(self, slide_surface: SlideSurface, screen_w: int, screen_h: int, scale: float = 100.0, color_rgba: tuple[int] = (100, 200, 100, 80), thickness: int = 3) -> None:
+    def __init__(self, slide_surface: SlideSurface, screen_w: int, screen_h: int, scale: float = 100.0, color_rgba: tuple[int] = (100, 200, 100, 80), thickness: int = 3, static: bool = False) -> None:
         super().__init__(screen_w, screen_h, scale)
         self.slide_surface = slide_surface
         self.color = color_rgba
         self.thickness = thickness
+        self.static = static
     
     def draw(self, surface: pg.Surface, as_skeleton: bool = False) -> None:
         if isinstance(self.slide_surface, BezierSlideSurface):
@@ -83,17 +87,17 @@ class SlideSurfaceRender(ObjRender):
                 pm = self.to_screen(pm)
                 pg.draw.line(surface, self.color[:3], pm, pe, self.thickness)
 
-
-
 class TextRender(ObjRender):
-    def __init__(self, text: str, screen_w: int, screen_h: int, scale: int, font: pg.font.Font, color_rgba: tuple[int] = (0, 200, 100, 80), pos: ndarray = np.array([0.0, 0.0])) -> None:
+    def __init__(self, text: str, screen_w: int, screen_h: int, scale: int, font: pg.font.Font, color_rgba: tuple[int] = (0, 200, 100, 80), pos: ndarray = np.array([0.0, 0.0]), static: bool = False) -> None:
         super().__init__(screen_w, screen_h, scale)
         self.font = font
         self.pos = pos
         self.text = text
         self.color = color_rgba
-    def draw(self,surface: pg.Surface, text: str | None = None) -> None:
+        self.static = static
+    def draw(self, surface: pg.Surface, text: str | None = None) -> None:
         if text:
             self.text = text
         rendered_text = self.font.render(self.text, True, self.color[:3])
-        surface.blit(rendered_text, self.to_screen(self.pos))
+        text_rect = rendered_text.get_rect(center=self.to_screen(self.pos))
+        surface.blit(rendered_text, text_rect)

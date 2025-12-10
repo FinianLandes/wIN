@@ -1,7 +1,8 @@
 from .core import *
 
 class LineSlideSurface(SlideSurface):
-    def __init__(self, points: ndarray) -> None:
+    def __init__(self, points: ndarray, invis: bool = False) -> None:
+        self.invis = invis
         self.points = points if len(points) < 3 else points[0:2]
         tangent = (self.points[1] - self.points[0]) / float(np.linalg.norm(self.points[1] - self.points[0]))
         self.norm = np.array([-tangent[1], tangent[0]])
@@ -38,8 +39,9 @@ class LineSlideSurface(SlideSurface):
         return cross / length
 
 class BezierSlideSurface(SlideSurface):
-    def __init__(self, points: ndarray, cw: bool = False) -> None:
-        self.points = points 
+    def __init__(self, points: ndarray,cw: bool = True, invis: bool = False) -> None:
+        self.points = points
+        self.invis = invis
         self.n = len(self.points) - 1
         self.cw = cw
         self.prev_normal: ndarray | None = None 
@@ -118,34 +120,38 @@ class BezierSlideSurface(SlideSurface):
         return -base_normal if self.cw else base_normal
 
     def tangential_dist(self, t: float, point: ndarray) -> float:
-        if t < 1e-4:
-            B = self.points[0]
-            tan = self.bezier_deriv(1e-4)
-        elif t > 1 - 1e-4:
-            B = self.points[-1]
-            tan = self.bezier_deriv(1 - 1e-4)
-        else:
-            return -1.0
-        tan_norm = tan / np.linalg.norm(tan)
-        d = point - B
-        return np.dot(d, tan_norm)
-
+        t = np.clip(t, 0.0, 1.0)
+        B = self.bezier(t)
+        tan = self.bezier_deriv(t)
+        mag = np.linalg.norm(tan)
+        if mag < 1e-8:
+            if t < 0.5:
+                tan = self.points[1] - self.points[0]
+            else:
+                tan = self.points[-1] - self.points[-2]
+            mag = np.linalg.norm(tan)
+            if mag < 1e-8:
+                return 0.0
+        tan /= mag
+        d = np.dot(point - B, tan)
+        return d
 
 class TrackGenerator():
-    def __init__(self, max_slope: float = 45, min_slope: float = 10, max_gap: float = 1.0, pre_render_range: int = 100, max_cont_seg: int = 3, max_seg_len: float = 10, min_seg_len: float = 5) -> None:
-        self.segments: list[SlideSurface] = [LineSlideSurface(np.array([[-20, 10], [10, 5]]))]
+    def __init__(self, max_slope: float = 45, min_slope: float = 10, max_gap: float = 3.0, pre_render_range: int = 150, max_seg_len: float = 10, min_seg_len: float = 5, max_len_factor: float = 2.0, use_beziers: bool = False) -> None:
+        self.segments: list[SlideSurface] = [LineSlideSurface(np.array([[-20, 10], [10, 0]]))]
         self.max_slope = max_slope #Deg
         self.min_slope = min_slope
         self.pre_render_range = pre_render_range
-        self.max_cont_seg = max_cont_seg
         self.max_seg_len = max_seg_len
         self.min_seg_len = min_seg_len
         self.max_gap = max_gap
-        self.no_gap_count = 0
+        self.no_gap = True
         self.end_pos = self.segments[0].points[1]
         self.wiggle = 0.8
         self.handle_min = 0.22
         self.handle_max = 0.32
+        self.max_len_factor = max_len_factor
+        self.use_beziers = use_beziers
         
     
     def update(self, player_pos: ndarray) -> None:
@@ -156,29 +162,28 @@ class TrackGenerator():
             self.segments.pop(0)
 
     def _generate_segment(self) -> None:
-        if self.no_gap_count > self.max_cont_seg:
-            self.no_gap_count = 0
+        if self.no_gap:
+            self.no_gap = False
             self._add_gap()
         else:
-            if self.no_gap_count == 0:
-                choice = random.randint(0, 1)
-            else: 
-                choice = random.randint(0, 2)
-            match choice:
-                case 0:
-                    self._add_line()
-                    self.no_gap_count += 1
-                case 1:
-                    self._add_bezier()
-                    self.no_gap_count += 1
-                case 2:
-                    self._add_gap()
-                    self.no_gap_count = 0
+            self.no_gap = True
+
+            choice = random.randint(0, 2) if self.use_beziers else 0
+            if choice == 0:
+                self._add_line()
+            else:
+                self._add_bezier()
     
     def _calculate_end_point(self) -> ndarray:
+        base_len = (random.random() * (self.max_seg_len - self.min_seg_len)) + self.min_seg_len
+        length_factor = random.uniform(1.0, self.max_len_factor)
+        length = base_len * length_factor
+
         slope = (random.random() * (self.max_slope - self.min_slope)) + self.min_slope
-        length = (random.random() * (self.max_seg_len - self.min_seg_len)) + self.min_seg_len
-        dp = np.array([math.cos(math.radians(slope)) * length, -math.sin(math.radians(slope)) * length])
+        dp = np.array([
+            math.cos(math.radians(slope)) * length,
+            -math.sin(math.radians(slope)) * length
+        ])
         return self.end_pos + dp
 
     def _add_line(self) -> None:
@@ -232,6 +237,7 @@ class TrackGenerator():
         self.end_pos = p2.copy()
 
     def _add_gap(self) -> None:
+        self.segments.append(LineSlideSurface(np.array([[self.end_pos[0], self.end_pos[1]], [self.end_pos[0] + self.max_gap, self.end_pos[1]]]), True))
         self.end_pos[0] += self.max_gap
 
 
