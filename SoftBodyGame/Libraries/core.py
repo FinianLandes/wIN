@@ -2,9 +2,11 @@ import numpy as np
 from numpy import ndarray
 import math
 import pygame as pg
-import moderngl as mgl
+from OpenGL.GL import *
+from OpenGL.GLU import *
 import time
 import random
+import json
 from copy import deepcopy
 
 

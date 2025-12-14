@@ -2,15 +2,24 @@ from .physics import *
 from .objects import *
 
 class ObjRender():
-    def __init__(self, screen_w: int, screen_h: int, scale: int, static: bool = False) -> None:
+    def __init__(self, screen_w: int, screen_h: int, scale: int, static: bool = False, open_gl: bool = False) -> None:
         self.w = screen_w
         self.h = screen_h
         self.scale = scale
         self.cam_x = 0.0
         self.cam_y = 0.0
         self.static = static
+        self.open_gl = open_gl
     
-    def draw(self, surface: pg.Surface) -> None:
+    def draw(self, surface: pg.Surface, as_skeleton: bool = False) -> None:
+        if self.open_gl:
+            self._draw_gl(as_skeleton)
+        else:
+            self._draw_pg(surface, as_skeleton)
+
+    def _draw_gl(self, as_skeleton: bool = False) -> None:
+        ...
+    def _draw_pg(self, surface: pg.Surface, as_skeleton: bool = False) -> None:
         ...
     
     def update_camera(self, player_pos: ndarray) -> None:
@@ -31,14 +40,78 @@ class ObjRender():
         return 0 <= x < self.w and 0 <= y < self.h
 
 class SoftBodyRender(ObjRender):
-    def __init__(self, body: SoftBody, screen_w: int, screen_h: int, scale: float = 100.0, color_rgba: tuple[int] = (255, 200, 100, 80), thickness: int = 3, static: bool = False) -> None:
+    def __init__(self, body: SoftBody, screen_w: int, screen_h: int, scale: float = 100.0, color_rgba: tuple[int] = (255, 200, 100, 80), thickness: int = 3, glow: int = 3, static: bool = False, open_gl: bool = False) -> None:
         super().__init__(screen_w, screen_h, scale)
         self.body = body
         self.color = color_rgba
         self.thickness = thickness
         self.static = static
+        self.glow = glow
+        self.open_gl = open_gl
+    
+    def _draw_gl(self, as_skeleton: bool = False) -> None:
+        pts = [self.to_screen(p.pos) for p in self.body.points]
+        r, g, b, a = [c / 255.0 for c in self.color]
 
-    def draw(self, surface: pg.Surface, as_skeleton: bool = False) -> None:
+        # --- Tessellator callbacks ---
+        def begin_cb(mode):
+            glBegin(mode)
+
+        def end_cb():
+            glEnd()
+
+        def vertex_cb(vertex, data=None):
+            glVertex2f(vertex[0], vertex[1])
+
+        def combine_cb(coords, vertex_data, weight):
+            # Create a new vertex as a 3D tuple
+            return [coords[0], coords[1], 0.0]
+
+        def error_cb(err):
+            print("Tessellation error:", gluErrorString(err))
+
+        # --- Tessellate filled polygon ---
+        tess = gluNewTess()
+        gluTessCallback(tess, GLU_TESS_BEGIN, begin_cb)
+        gluTessCallback(tess, GLU_TESS_END, end_cb)
+        gluTessCallback(tess, GLU_TESS_VERTEX, vertex_cb)
+        gluTessCallback(tess, GLU_TESS_ERROR, error_cb)
+        gluTessCallback(tess, GLU_TESS_COMBINE, combine_cb)
+
+        glColor4f(r, g, b, a * 0.8)
+        gluTessBeginPolygon(tess, None)
+        gluTessBeginContour(tess)
+        for x, y in pts:
+            gluTessVertex(tess, [x, y, 0.0], [x, y, 0.0])
+        gluTessEndContour(tess)
+        gluTessEndPolygon(tess)
+        gluDeleteTess(tess)
+
+        # --- Glow and outline ---
+        for i in range(self.glow):
+            alpha = a * (0.15 / (i + 1))
+            glColor4f(r, g, b, alpha)
+            glLineWidth(self.thickness + i * 2)
+            glBegin(GL_LINE_LOOP)
+            for x, y in pts:
+                glVertex2f(x, y)
+            glEnd()
+
+        glColor4f(r, g, b, a)
+        glLineWidth(self.thickness)
+        glBegin(GL_LINE_LOOP)
+        for x, y in pts:
+            glVertex2f(x, y)
+        glEnd()
+
+        if as_skeleton:
+            glPointSize(6)
+            glBegin(GL_POINTS)
+            for x, y in pts:
+                glVertex2f(x, y)
+            glEnd()
+    
+    def _draw_pg(self, surface: pg.Surface, as_skeleton: bool = False) -> None:
         pts = [self.to_screen(p.pos) for p in self.body.points]
         n = len(pts)
 
@@ -58,14 +131,59 @@ class SoftBodyRender(ObjRender):
             pg.draw.line(surface, self.color[:3], pts[i], pts[(i + 1) % n], self.thickness)
 
 class SlideSurfaceRender(ObjRender):
-    def __init__(self, slide_surface: SlideSurface, screen_w: int, screen_h: int, scale: float = 100.0, color_rgba: tuple[int] = (100, 200, 100, 80), thickness: int = 3, static: bool = False) -> None:
+    def __init__(self, slide_surface: SlideSurface, screen_w: int, screen_h: int, scale: float = 100.0, color_rgba: tuple[int] = (100, 200, 100, 80), thickness: int = 3, glow: int = 3, static: bool = False, open_gl: bool = True,) -> None:
         super().__init__(screen_w, screen_h, scale)
         self.slide_surface = slide_surface
         self.color = color_rgba
         self.thickness = thickness
         self.static = static
+        self.open_gl = open_gl
+        self.glow = glow
     
-    def draw(self, surface: pg.Surface, as_skeleton: bool = False) -> None:
+    def _draw_gl(self, as_skeleton: bool = False) -> None:
+        r, g, b, a = [c / 255.0 for c in self.color]
+
+        if isinstance(self.slide_surface, BezierSlideSurface):
+            t_space = np.linspace(0, 1, 50)
+            pts = [self.to_screen(self.slide_surface.bezier(t)) for t in t_space]
+        else:
+            pts = [
+                self.to_screen(self.slide_surface.points[0]),
+                self.to_screen(self.slide_surface.points[1])
+            ]
+
+        for i in range(self.glow):
+            glColor4f(r, g, b, a * (0.2 / (i + 1)))
+            glLineWidth(self.thickness + i * 2)
+
+            glBegin(GL_LINE_STRIP)
+            for x, y in pts:
+                glVertex2f(x, y)
+            glEnd()
+
+        glColor4f(r, g, b, a)
+        glLineWidth(self.thickness)
+
+        glBegin(GL_LINE_STRIP)
+        for x, y in pts:
+            glVertex2f(x, y)
+        glEnd()
+
+        if as_skeleton:
+            pm = self.slide_surface.bezier(0.5) if hasattr(self.slide_surface, "bezier") else \
+                (self.slide_surface.points[0] + self.slide_surface.points[1]) * 0.5
+            nrm = self.slide_surface.normal_at(0.5)
+
+            p0 = self.to_screen(pm)
+            p1 = self.to_screen(pm + nrm)
+
+            glLineWidth(2)
+            glBegin(GL_LINES)
+            glVertex2f(*p0)
+            glVertex2f(*p1)
+            glEnd()
+    
+    def _draw_pg(self, surface: pg.Surface, as_skeleton: bool = False) -> None:
         if isinstance(self.slide_surface, BezierSlideSurface):
             t_space = np.linspace(0, 1, 50)
             points = [self.to_screen(self.slide_surface.bezier(t)) for t in t_space]
@@ -88,14 +206,58 @@ class SlideSurfaceRender(ObjRender):
                 pg.draw.line(surface, self.color[:3], pm, pe, self.thickness)
 
 class TextRender(ObjRender):
-    def __init__(self, text: str, screen_w: int, screen_h: int, scale: int, font: pg.font.Font, color_rgba: tuple[int] = (0, 200, 100, 80), pos: ndarray = np.array([0.0, 0.0]), static: bool = False) -> None:
+    def __init__(self, text: str, screen_w: int, screen_h: int, scale: int, font: pg.font.Font, color_rgba: tuple[int] = (0, 200, 100, 80), pos: ndarray = np.array([0.0, 0.0]), glow: int = 3,  static: bool = False, open_gl: bool = True) -> None:
         super().__init__(screen_w, screen_h, scale)
         self.font = font
         self.pos = pos
         self.text = text
         self.color = color_rgba
         self.static = static
-    def draw(self, surface: pg.Surface, text: str | None = None) -> None:
+        self.open_gl = open_gl
+        self.glow = glow
+    def draw(self, surface: pg.Surface, as_skeleton: bool = False, text: str | None = None) -> None:
+        if self.open_gl:
+            self._draw_gl(as_skeleton, text)
+        else:
+            self._draw_pg(surface, as_skeleton)
+    
+    def _draw_gl(self, as_skeleton: bool = False, text: str | None = None) -> None:
+        if text:
+            self.text = text
+
+        rendered = self.font.render(self.text, True, self.color[:3])
+        w, h = rendered.get_size()
+        tex_data = pg.image.tostring(rendered, "RGBA", True)
+
+        tex_id = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, tex_id)
+
+        glTexImage2D(
+            GL_TEXTURE_2D, 0, GL_RGBA,
+            w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, tex_data
+        )
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+
+        x, y = self.to_screen(self.pos)
+        x -= w // 2
+        y -= h // 2
+
+        glEnable(GL_TEXTURE_2D)
+        glColor4f(1, 1, 1, 1)
+
+        glBegin(GL_QUADS)
+        glTexCoord2f(0, 1); glVertex2f(x,     y)
+        glTexCoord2f(1, 1); glVertex2f(x + w, y)
+        glTexCoord2f(1, 0); glVertex2f(x + w, y + h)
+        glTexCoord2f(0, 0); glVertex2f(x,     y + h)
+        glEnd()
+
+        glDisable(GL_TEXTURE_2D)
+        glDeleteTextures([tex_id])
+    
+    def _draw_pg(self, surface: pg.Surface, as_skeleton: bool = False, text: str | None = None) -> None:
         if text:
             self.text = text
         rendered_text = self.font.render(self.text, True, self.color[:3])

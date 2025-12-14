@@ -4,7 +4,7 @@ from .render import *
 from .objects import *
 
 class Game:
-    def __init__(self, screen_size: tuple[int], scale: int, fps: int, title: str = "Game") -> None:
+    def __init__(self, screen_size: tuple[int], scale: int, fps: int, title: str = "Game", open_gl: bool = True) -> None:
         self.width, self.height = screen_size
         self.scale = scale
         self.true_width = self.width / self.scale, self.height / self.scale
@@ -14,12 +14,12 @@ class Game:
         self.track_generator: TrackGenerator | None = None
         self.surfaces: list[SlideSurface] = []
         self.colliders: list[Collider] = []
-        self.player_points = [Point([-0.2, 12.0]), Point([0.2, 12.0]), Point([0.2, 12.4]), Point([-0.2, 12.4])]
+        self.player_points = self._load_body()
         self.player: ShapedSoftBody | None = None
         self.soft_bodies: list[ShapedSoftBody] = []
         self.renders: list[ObjRender] = []
         self.skeleton_view = False
-        self.jump_impulse = 13
+        self.jump_impulse = 8.0
         self.surface_restitution = 0.99
         self.game_over = False
         self.last_player_pos: ndarray | None = None
@@ -29,6 +29,8 @@ class Game:
         self.game_over_timeout = 1.0
         self.start_again = False
         self.font = "Comic Sans MS"
+        self.open_gl = open_gl
+        self.bg_color = (20, 20, 40)
         self.screen, self.clk = self._setup()
         self._start_game()
 
@@ -63,18 +65,24 @@ class Game:
         text_render = []
         if not self.game_over:
             self.last_player_pos = self.player.centroid
-            text_render += [TextRender(f"Score: {int(self.score)}", self.width, self.height, self.scale, pg.font.SysFont(self.font, 30), pos=np.array([7.4, 5.6]), static=True)]
-            self.renders = [SoftBodyRender(b, self.width, self.height, self.scale) for b in self.soft_bodies] + [SlideSurfaceRender(s,self.width, self.height, self.scale) for s in self.surfaces if not s.invis] + text_render
+            text_render += [TextRender(f"Score: {int(self.score)}", self.width, self.height, self.scale, pg.font.SysFont(self.font, 30), pos=np.array([7.4, 5.6]),glow=0, static=True, open_gl=self.open_gl)]
+            self.renders = [SoftBodyRender(b, self.width, self.height, self.scale, glow=3, open_gl=self.open_gl) for b in self.soft_bodies] + [SlideSurfaceRender(s,self.width, self.height, self.scale, glow=10, open_gl=self.open_gl) for s in self.surfaces if not s.invis] + text_render
         if self.game_over and time.time() - self.game_over_time > self.game_over_timeout: 
-            text_render += [TextRender(f"Highscore: {int(self.high_score)}", self.width, self.height, self.scale, pg.font.SysFont(self.font, 30), pos=np.array([0.0, -1.0]), static=True)]
-            text_render += [TextRender(f"Game Over", self.width, self.height, self.scale, pg.font.SysFont(self.font, 50), pos=np.array([0.0, 0.0]), static=True)]
-            text_render += [TextRender(f"Press Space to continue", self.width, self.height, self.scale, pg.font.SysFont(self.font, 30), pos=np.array([0.0, -3.0]), static=True)]
+            text_render += [TextRender(f"Highscore: {int(self.high_score)}", self.width, self.height, self.scale, pg.font.SysFont(self.font, 30), pos=np.array([0.0, -1.0]), glow=0, static=True, open_gl=self.open_gl)]
+            text_render += [TextRender(f"Game Over", self.width, self.height, self.scale, pg.font.SysFont(self.font, 50), pos=np.array([0.0, 0.0]), glow=0, static=True, open_gl=self.open_gl)]
+            text_render += [TextRender(f"Press Space to continue", self.width, self.height, self.scale, pg.font.SysFont(self.font, 30), pos=np.array([0.0, -3.0]), glow=0, static=True, open_gl=self.open_gl)]
             self.renders = text_render
             
-        self.screen.fill((20, 20, 40))
+        if self.open_gl:
+            glClearColor(self.bg_color[0]/255, self.bg_color[1]/255, self.bg_color[2]/255, 1.0)
+            glClear(GL_COLOR_BUFFER_BIT)
+        else:
+            self.screen.fill(self.bg_color)
+
         for r in self.renders:
             r.update_camera(self.last_player_pos)
             r.draw(self.screen, self.skeleton_view)
+
         pg.display.flip()
     
     def _handle_events(self) -> None:
@@ -133,17 +141,45 @@ class Game:
         self.track_generator = TrackGenerator()
         self.colliders = []
         self.surfaces = []
-        self.player = ShapedSoftBody(deepcopy(self.player_points), self.colliders, damp=0.02, stiffness=0.3)
+        self.player = ShapedSoftBody(deepcopy(self.player_points), self.colliders, damp=0.02, stiffness=0.35)
         self.soft_bodies = [self.player]
         self.last_player_pos = np.array([0.0, 0.0])
 
     def _setup(self) -> tuple[pg.Surface, pg.time.Clock]:
         pg.init()
         pg.font.init()
-        screen = pg.display.set_mode((self.width, self.height))#, pg.OPENGL | pg.DOUBLEBUF)
+        if self.open_gl:
+            screen = pg.display.set_mode((self.width, self.height), pg.OPENGL | pg.DOUBLEBUF)
+            glViewport(0, 0, self.width, self.height)
+            glMatrixMode(GL_PROJECTION)
+            glLoadIdentity()
+            gluOrtho2D(0, self.width, self.height, 0)
+            glMatrixMode(GL_MODELVIEW)
+            glLoadIdentity()
+            glEnable(GL_BLEND)
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE)
+            glDisable(GL_DEPTH_TEST)
+        else:
+            screen = pg.display.set_mode((self.width, self.height))
         pg.display.set_caption(self.window_title)
+
         clk = pg.time.Clock()
         return screen, clk
+    
+    def _load_body(self) -> list[Point]:
+        with open("SoftBodyGame/Resources/Seal.json") as f:
+            data = json.load(f)
+
+        points_array = np.array(data["points"], dtype=float)
+
+        scale = 0.4
+        points_array *= scale
+        lst = []
+        for p in points_array:
+            p[1] += 6.0
+            lst.append(Point(p))
+
+        return lst
     
     def _quit(self) -> None:
         pg.quit()

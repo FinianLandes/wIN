@@ -137,7 +137,7 @@ class BezierSlideSurface(SlideSurface):
         return d
 
 class TrackGenerator():
-    def __init__(self, max_slope: float = 45, min_slope: float = 10, max_gap: float = 3.0, pre_render_range: int = 150, max_seg_len: float = 10, min_seg_len: float = 5, max_len_factor: float = 2.0, use_beziers: bool = False) -> None:
+    def __init__(self, max_slope: float = 45, min_slope: float = 20, max_gap: float = 3.0, pre_render_range: int = 150, max_seg_len: float = 13, min_seg_len: float = 7, max_len_factor: float = 2.0, use_beziers: bool = False) -> None:
         self.segments: list[SlideSurface] = [LineSlideSurface(np.array([[-20, 10], [10, 0]]))]
         self.max_slope = max_slope #Deg
         self.min_slope = min_slope
