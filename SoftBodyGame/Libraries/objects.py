@@ -154,12 +154,17 @@ class TrackGenerator():
         self.use_beziers = use_beziers
         
     
-    def update(self, player_pos: ndarray) -> None:
+    def update(self, player_pos: ndarray) -> bool:
+        mod = False
         if self.end_pos[0] - player_pos[0] < self.pre_render_range:
             self._generate_segment()
+            mod = True
                 
         while player_pos[0] - self.segments[0].points[-1][0] > self.pre_render_range:
             self.segments.pop(0)
+            mod = True
+        
+        return mod
 
     def _generate_segment(self) -> None:
         if self.no_gap:
@@ -240,4 +245,62 @@ class TrackGenerator():
         self.segments.append(LineSlideSurface(np.array([[self.end_pos[0], self.end_pos[1]], [self.end_pos[0] + self.max_gap, self.end_pos[1]]]), True))
         self.end_pos[0] += self.max_gap
 
+class BgGenerator():
+    def __init__(self, chunk_size: float = 20.0, stars_per_chunk: int = 15, pre_render_range: int = 6) -> None:
+        self.chunk_size = chunk_size
+        self.stars_per_chunk = stars_per_chunk
+        self.pre_render_range = pre_render_range
+        self.chunks: dict[tuple[int, int], list[Star]] = {}
+
+    def update(self, player_pos: ndarray) -> bool:
+        mod = False
+        cx = int(np.floor(player_pos[0] / self.chunk_size))
+        cy = int(np.floor(player_pos[1] / self.chunk_size))
+
+        needed = set(
+            (cx + dx, cy + dy)
+            for dx in range(-self.pre_render_range, self.pre_render_range + 1)
+            for dy in range(-self.pre_render_range, self.pre_render_range + 1)
+        )
+
+        for key in list(self.chunks.keys()):
+            if key not in needed:
+                del self.chunks[key]
+                mod = True
+
+        for key in needed:
+            if key not in self.chunks:
+                self.chunks[key] = self._generate_chunk(*key)
+                mod = True
+        return mod
+
+    def _generate_chunk(self, cx: int, cy: int) -> list[Star]:
+        rng = np.random.default_rng(hash((cx, cy)) & 0xFFFFFFFF)
+
+        stars = []
+        base_x = cx * self.chunk_size
+        base_y = cy * self.chunk_size
+
+        for _ in range(self.stars_per_chunk):
+            pos = np.array([
+                base_x + rng.random() * self.chunk_size,
+                base_y + rng.random() * self.chunk_size
+            ])
+            stars.append(
+                Star(
+                    pos=pos,
+                    size=rng.uniform(1.0, 3.0),
+                    luminance=rng.uniform(0.4, 1.0),
+                    parallax=rng.uniform(0.0, 1.0),
+                    color=(0, 0, rng.uniform(100.0, 255.0))
+                )
+            )
+
+        return stars
+    
+    def get_stars(self) -> list[Star]:
+        stars = []
+        for chunk in self.chunks.values():
+            stars.extend(chunk)
+        return stars
 

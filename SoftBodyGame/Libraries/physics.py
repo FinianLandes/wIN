@@ -1,7 +1,7 @@
 from .core import *
 
 class Collider():
-    def __init__(self, surface: SlideSurface, restitution: float = 0.5, min_penetration: float = 4e-3, max_penetration: float = 0.2, invis: bool = False) -> None:
+    def __init__(self, surface: SlideSurface, restitution: float = 0.5, min_penetration: float = 4e-3, max_penetration: float = 0.5, invis: bool = False) -> None:
         self.surface: SlideSurface = surface
         self.restitution = restitution
         self.min_penetration = min_penetration
@@ -41,7 +41,7 @@ class Collider():
                     p.v -= (1 + self.restitution) * vn * normal
 
 class SoftBody():
-    def __init__(self, points: list[Point], damp: float = 0.0, coyote_time: float = 0.1) -> None:
+    def __init__(self, points: list[Point], damp: float = 0.0, coyote_time: float = 0.2) -> None:
         self.points = points
         self.damp = damp
         self.impulse = np.zeros(2)

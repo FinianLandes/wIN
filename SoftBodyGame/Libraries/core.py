@@ -30,3 +30,11 @@ class SlideSurface():
     def closest_point(self, point: ndarray) -> tuple[ndarray, float]: ...
     def normal_at(self, t: float) -> ndarray: ...
     def tangential_dist(self, t: float, point: ndarray) -> float: ...
+
+class Star():
+    def __init__(self, pos: ndarray, luminance: int, size: float, parallax: float, color: tuple[int] = (0, 0, 255)) -> None:
+        self.pos = pos
+        self.luminance = luminance
+        self.size = size
+        self.color = color
+        self.parallax = parallax

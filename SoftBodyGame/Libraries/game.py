@@ -17,6 +17,11 @@ class Game:
         self.player_points = self._load_body()
         self.player: ShapedSoftBody | None = None
         self.soft_bodies: list[ShapedSoftBody] = []
+        self.bg_gen: BgGenerator | None = None
+        self.star_render: list[StarRender] = []
+        self.game_over_renders: list[TextRender] = []
+        self.soft_body_renders: list[SoftBodyRender] = []
+        self.collide_render: list[SlideSurfaceRender] = []
         self.renders: list[ObjRender] = []
         self.skeleton_view = False
         self.jump_impulse = 8.0
@@ -28,6 +33,7 @@ class Game:
         self.game_over_time = 0
         self.game_over_timeout = 1.0
         self.start_again = False
+        self.startup = True
         self.font = "Comic Sans MS"
         self.open_gl = open_gl
         self.bg_color = (20, 20, 40)
@@ -38,7 +44,7 @@ class Game:
         while self._is_running():
             dt = self.clk.tick(self.fps) / 1000.0
             self._update_physics(dt)
-            self._update_colliders()
+            self._update_elements()
             self._update_game()
             self._update_graphics()
             self._handle_events()
@@ -54,10 +60,15 @@ class Game:
         if not self.game_over:
             self.score = np.sqrt((self.player_points[0].pos[0] - self.player.centroid[0]) ** 2 + (self.player_points[0].pos[1] - self.player.centroid[0]) ** 2) * 10 / self.scale 
     
-    def _update_colliders(self) -> None:
-        self.track_generator.update(self.player.centroid)
-        self.surfaces = self.track_generator.segments
-        self.colliders = [Collider(s, restitution=self.surface_restitution, invis=s.invis) for s in self.surfaces]
+    def _update_elements(self) -> None:
+        if self.bg_gen.update(self.player.centroid):
+            self.star_render = [StarRender(self.bg_gen.get_stars(), self.width, self.height, self.scale, glow=3, open_gl=self.open_gl)]
+        
+        if self.track_generator.update(self.player.centroid):
+            self.surfaces = self.track_generator.segments
+            self.colliders = [Collider(s, restitution=self.surface_restitution, invis=s.invis) for s in self.surfaces]
+            self.collide_render = [SlideSurfaceRender(s,self.width, self.height, self.scale, glow=10, open_gl=self.open_gl) for s in self.surfaces if not s.invis] 
+        
         for b in self.soft_bodies:
             b.colliders = self.colliders
 
@@ -66,12 +77,14 @@ class Game:
         if not self.game_over:
             self.last_player_pos = self.player.centroid
             text_render += [TextRender(f"Score: {int(self.score)}", self.width, self.height, self.scale, pg.font.SysFont(self.font, 30), pos=np.array([7.4, 5.6]),glow=0, static=True, open_gl=self.open_gl)]
-            self.renders = [SoftBodyRender(b, self.width, self.height, self.scale, glow=3, open_gl=self.open_gl) for b in self.soft_bodies] + [SlideSurfaceRender(s,self.width, self.height, self.scale, glow=10, open_gl=self.open_gl) for s in self.surfaces if not s.invis] + text_render
+            if self.startup:
+                text_render += [TextRender(f"Press Space to Jump", self.width, self.height, self.scale, pg.font.SysFont(self.font, 30), pos=np.array([1.0, 5.0]),glow=0, static=False, open_gl=self.open_gl)]
+            
+            self.renders = self.soft_body_renders + self.collide_render + text_render + self.star_render
+        
         if self.game_over and time.time() - self.game_over_time > self.game_over_timeout: 
-            text_render += [TextRender(f"Highscore: {int(self.high_score)}", self.width, self.height, self.scale, pg.font.SysFont(self.font, 30), pos=np.array([0.0, -1.0]), glow=0, static=True, open_gl=self.open_gl)]
-            text_render += [TextRender(f"Game Over", self.width, self.height, self.scale, pg.font.SysFont(self.font, 50), pos=np.array([0.0, 0.0]), glow=0, static=True, open_gl=self.open_gl)]
-            text_render += [TextRender(f"Press Space to continue", self.width, self.height, self.scale, pg.font.SysFont(self.font, 30), pos=np.array([0.0, -3.0]), glow=0, static=True, open_gl=self.open_gl)]
-            self.renders = text_render
+            self.game_over_renders[0].text = f"Highscore: {int(self.high_score)}"
+            self.renders = self.game_over_renders
             
         if self.open_gl:
             glClearColor(self.bg_color[0]/255, self.bg_color[1]/255, self.bg_color[2]/255, 1.0)
@@ -80,7 +93,8 @@ class Game:
             self.screen.fill(self.bg_color)
 
         for r in self.renders:
-            r.update_camera(self.last_player_pos)
+            if not r.static:
+                r.update_camera(self.last_player_pos)
             r.draw(self.screen, self.skeleton_view)
 
         pg.display.flip()
@@ -130,6 +144,7 @@ class Game:
             self.high_score = self.score if self.score > self.high_score else self.high_score
             if self.game_over_time == 0:
                 self.game_over_time = time.time()
+            self.startup = False
         if self.start_again:
             self.start_again = False
             self.game_over = False
@@ -141,8 +156,10 @@ class Game:
         self.track_generator = TrackGenerator()
         self.colliders = []
         self.surfaces = []
-        self.player = ShapedSoftBody(deepcopy(self.player_points), self.colliders, damp=0.02, stiffness=0.35)
+        self.bg_gen = BgGenerator()
+        self.player = ShapedSoftBody(deepcopy(self.player_points), self.colliders, damp=0.05, stiffness=0.5)
         self.soft_bodies = [self.player]
+        self.soft_body_renders = [SoftBodyRender(b, self.width, self.height, self.scale, glow=3, open_gl=self.open_gl) for b in self.soft_bodies]
         self.last_player_pos = np.array([0.0, 0.0])
 
     def _setup(self) -> tuple[pg.Surface, pg.time.Clock]:
@@ -157,11 +174,13 @@ class Game:
             glMatrixMode(GL_MODELVIEW)
             glLoadIdentity()
             glEnable(GL_BLEND)
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE)
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
             glDisable(GL_DEPTH_TEST)
         else:
             screen = pg.display.set_mode((self.width, self.height))
         pg.display.set_caption(self.window_title)
+
+        self.game_over_renders = [TextRender("", self.width, self.height, self.scale, pg.font.SysFont(self.font, 30), pos=np.array([0.0, -1.0]), glow=0, static=True, open_gl=self.open_gl), TextRender(f"Game Over", self.width, self.height, self.scale, pg.font.SysFont(self.font, 50), pos=np.array([0.0, 0.0]), glow=0, static=True, open_gl=self.open_gl), TextRender(f"Press Space to continue", self.width, self.height, self.scale, pg.font.SysFont(self.font, 30), pos=np.array([0.0, -3.0]), glow=0, static=True, open_gl=self.open_gl)]
 
         clk = pg.time.Clock()
         return screen, clk
