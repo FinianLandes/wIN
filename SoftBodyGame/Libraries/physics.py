@@ -97,7 +97,6 @@ class ShapedSoftBody(SoftBody):
         self.I_inv_body = 1.0 / self.I_body
 
         self.colliders = colliders
-        self.max_acc_vel = 2.0
     
     def step(self, dt: float) -> None:
         self._init_step(dt)

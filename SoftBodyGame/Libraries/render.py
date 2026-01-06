@@ -270,7 +270,7 @@ class TextRender(ObjRender):
         surface.blit(rendered_text, text_rect)
 
 class StarRender(ObjRender):
-    def __init__(self, stars: list[Star], screen_w: int, screen_h: int, scale: int, glow: int = 10, static: bool = False, open_gl: bool = False):
+    def __init__(self, stars: list[Star], screen_w: int, screen_h: int, scale: int, glow: int = 3, static: bool = False, open_gl: bool = False):
         super().__init__(screen_w, screen_h, scale, static, open_gl)
         self.stars = stars
         self.glow = glow
