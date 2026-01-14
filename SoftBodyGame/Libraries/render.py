@@ -19,6 +19,7 @@ class ObjRender():
 
     def _draw_gl(self, as_skeleton: bool = False) -> None:
         ...
+    
     def _draw_pg(self, surface: pg.Surface, as_skeleton: bool = False) -> None:
         ...
     

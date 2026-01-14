@@ -303,4 +303,3 @@ class BgGenerator():
         for chunk in self.chunks.values():
             stars.extend(chunk)
         return stars
-

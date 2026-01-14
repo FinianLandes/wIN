@@ -182,5 +182,3 @@ class ShapedSoftBody(SoftBody):
     def __str__(self):
         v_mean = np.mean([np.linalg.norm(p.v) for p in self.points])
         return (f"Centroid: ({self.centroid[0]:.3f}, {self.centroid[1]:.3f}), Angular vel: {self.omega:.3f}, Mean speed: {v_mean:.3f}")
-
-

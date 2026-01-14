@@ -148,7 +148,7 @@ class Game:
                 if b.can_jump():
                     b.add_impulse(self.jump_impulse * tan)
 
-    def _update_game(self):
+    def _update_game(self) -> None:
         if self.game_over:
             self.high_score = self.score if self.score > self.high_score else self.high_score
             if self.game_over_time == 0:
@@ -200,7 +200,7 @@ class Game:
 
         points_array = np.array(data["points"], dtype=float)
 
-        scale = 0.4
+        scale = 1.0
         points_array *= scale
         lst = []
         for p in points_array:
